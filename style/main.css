@@ -1,0 +1,27 @@
+@import "https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap";
+
+header {
+	background-color: white;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+main {
+	margin-top: 40px;
+}
+
+code,
+pre {
+	font-family: 'JetBrains Mono', monospace;
+}
+
+.card {
+	transition: transform 0.3s, box-shadow 0.3s;
+	border-radius: 16px;
+	margin-bottom: 1.5rem;
+	padding: 1.5rem;
+}
+
+.card:hover {
+	transform: translateY(-5px);
+	box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}

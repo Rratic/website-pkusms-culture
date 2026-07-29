@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>111</title>
+    <link rel="stylesheet" href="style/main.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <main class="level-layout">
+        <section class="stage" aria-live="polite">
+          <article class="story-panel">
+            <div id="level-kicker" class="level-kicker"></div>
+            <h1 id="level-title"></h1>
+            <div id="level-copy" class="rich-text"></div>
+          </article>
+
+          <section id="canvas-grid" class="canvas-grid" aria-label="可交互区域"></section>
+
+          <footer class="level-actions" hidden>
+            <div class="completion-state" id="completion-state"></div>
+            <div id="exit-actions" class="exit-actions"></div>
+          </footer>
+        </section>
+      </main>
+    </div>
+
+    <script src="src/library/level.js" defer></script>
+    <script src="src/placeholder/level.js" defer></script>
+    <script src="src/levels.js" defer></script>
+    <script src="src/main.js" defer></script>
+  </body>
+</html>

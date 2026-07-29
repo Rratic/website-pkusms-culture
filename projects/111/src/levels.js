@@ -1,0 +1,4 @@
+window.PUZZLE_LEVELS = [
+  window.PUZZLE_LIBRARY_LEVEL,
+  window.PUZZLE_PLACEHOLDER_LEVEL,
+];

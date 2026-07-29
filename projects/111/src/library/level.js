@@ -41,9 +41,7 @@
 
   window.PUZZLE_LIBRARY_LEVEL = {
     id: "library",
-    order: "00",
     title: "智华楼一楼",
-    kicker: "Library",
     completionText: "已完成",
     copy: `
       <p>（剧情没想好怎么写）</p>

@@ -4,10 +4,6 @@
   const levelsById = new Map(LEVELS.map((level) => [level.id, level]));
 
   const elements = {
-    levelName: document.querySelector("#current-level-name"),
-    elapsedTime: document.querySelector("#elapsed-time"),
-    bestTime: document.querySelector("#best-time"),
-    levelNav: document.querySelector("#level-nav"),
     kicker: document.querySelector("#level-kicker"),
     title: document.querySelector("#level-title"),
     copy: document.querySelector("#level-copy"),
@@ -37,24 +33,6 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   }
 
-  function formatTime(ms) {
-    if (!Number.isFinite(ms)) {
-      return "--:--";
-    }
-
-    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const two = (value) => String(value).padStart(2, "0");
-
-    if (hours > 0) {
-      return `${hours}:${two(minutes)}:${two(seconds)}`;
-    }
-
-    return `${two(minutes)}:${two(seconds)}`;
-  }
-
   function getLevelFromHash() {
     const id = decodeURIComponent(location.hash.replace(/^#/, ""));
     return levelsById.get(id) || LEVELS[0];
@@ -66,39 +44,6 @@
     }
 
     node.textContent = value == null ? "" : String(value);
-  }
-
-  function renderNavigation() {
-    if (!elements.levelNav) {
-      return;
-    }
-
-    const records = readRecords();
-    elements.levelNav.replaceChildren(
-      ...LEVELS.map((level) => {
-        const link = document.createElement("a");
-        const isActive = activeLevel && activeLevel.id === level.id;
-
-        link.className = `level-link${isActive ? " is-active" : ""}`;
-        link.href = `#${encodeURIComponent(level.id)}`;
-        link.setAttribute("aria-current", isActive ? "page" : "false");
-
-        const index = document.createElement("span");
-        index.className = "level-index";
-        index.textContent = level.order;
-
-        const title = document.createElement("span");
-        title.className = "level-link-title";
-        title.textContent = level.title;
-
-        const time = document.createElement("span");
-        time.className = "level-link-time";
-        time.textContent = formatTime(records[level.id]?.bestMs);
-
-        link.append(index, title, time);
-        return link;
-      }),
-    );
   }
 
   function renderExits() {
@@ -144,9 +89,6 @@
 
     writeRecords(records);
     window.clearInterval(timerId);
-    setText(elements.elapsedTime, formatTime(elapsedMs));
-    setText(elements.bestTime, formatTime(records[activeLevel.id].bestMs));
-    renderNavigation();
     renderExits();
     updateCompletionText();
   }
@@ -171,7 +113,6 @@
     }
 
     const elapsedMs = performance.now() - startedAt;
-    setText(elements.elapsedTime, formatTime(elapsedMs));
     updateCompletionText();
   }
 
@@ -196,13 +137,10 @@
     timerId = window.setInterval(updateTimer, 500);
 
     readRecords();
-    setText(elements.levelName, level.title);
-    setText(elements.bestTime, "");
-    setText(elements.kicker, level.kicker);
+    setText(elements.kicker, level.id);
     setText(elements.title, level.title);
     elements.copy.innerHTML = level.copy;
 
-    renderNavigation();
     renderCanvases(level.canvases);
     renderExits();
     updateTimer();

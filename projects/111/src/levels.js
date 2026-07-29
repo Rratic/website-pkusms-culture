@@ -1,4 +1,6 @@
-window.PUZZLE_LEVELS = [
-  window.PUZZLE_LIBRARY_LEVEL,
-  window.PUZZLE_PLACEHOLDER_LEVEL,
-];
+import libraryLevel from "./library/level.js";
+import placeholderLevel from "./placeholder/level.js";
+
+const levels = [libraryLevel, placeholderLevel];
+
+export default levels;

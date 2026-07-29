@@ -234,9 +234,8 @@ h1 {
 
 .canvas-panel {
 	display: grid;
-	gap: 10px;
 	min-width: 0;
-	padding: 14px;
+	overflow: hidden;
 	background: #ffffff;
 	border: 1px solid var(--line);
 	border-radius: 8px;
@@ -248,6 +247,39 @@ h1 {
 	align-items: center;
 	justify-content: space-between;
 	gap: 10px;
+	width: 100%;
+	min-height: 64px;
+	padding: 14px 18px;
+	color: var(--text);
+	background: #ffffff;
+	cursor: pointer;
+	text-align: left;
+}
+
+.canvas-title-row:hover {
+	background: var(--soft);
+}
+
+.canvas-title-row:focus-visible {
+	outline: 3px solid #9ab3ed;
+	outline-offset: -3px;
+}
+
+.canvas-title-row::after {
+	flex: 0 0 auto;
+	width: 9px;
+	height: 9px;
+	margin: 0 3px 4px 2px;
+	border-right: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	content: "";
+	transform: rotate(45deg);
+	transition: transform 160ms ease;
+}
+
+.canvas-title-row[aria-expanded="true"]::after {
+	margin-bottom: -4px;
+	transform: rotate(225deg);
 }
 
 .canvas-controls {
@@ -258,20 +290,22 @@ h1 {
 }
 
 .canvas-title {
+	flex: 1 1 auto;
 	min-width: 0;
 	overflow-wrap: anywhere;
-	font-size: 0.95rem;
+	font-size: 1.15rem;
 	font-weight: 760;
+	line-height: 1.3;
 }
 
 .canvas-state {
 	flex: 0 0 auto;
-	padding: 4px 8px;
+	padding: 6px 10px;
 	color: var(--amber);
 	background: #fff8eb;
 	border: 1px solid #f0d9ad;
 	border-radius: 999px;
-	font-size: 0.76rem;
+	font-size: 0.86rem;
 	font-weight: 720;
 }
 
@@ -279,6 +313,17 @@ h1 {
 	color: var(--green);
 	background: #eaf8f0;
 	border-color: #bde6ce;
+}
+
+.canvas-panel-content {
+	display: grid;
+	gap: 10px;
+	padding: 14px;
+	border-top: 1px solid var(--line);
+}
+
+.canvas-panel-content[hidden] {
+	display: none;
 }
 
 .canvas-frame {

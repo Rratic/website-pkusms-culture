@@ -213,26 +213,42 @@
     activeCanvasControllers = [];
 
     elements.canvasGrid.replaceChildren(
-      ...canvases.map((config) => {
+      ...canvases.map((config, index) => {
         const panel = document.createElement("section");
         panel.className = "canvas-panel";
 
-        const titleRow = document.createElement("div");
+        const contentId = `canvas-panel-content-${index}`;
+        const titleRow = document.createElement("button");
         titleRow.className = "canvas-title-row";
+        titleRow.type = "button";
+        titleRow.setAttribute("aria-expanded", "false");
+        titleRow.setAttribute("aria-controls", contentId);
 
-        const title = document.createElement("div");
+        const title = document.createElement("span");
         title.className = "canvas-title";
         title.textContent = config.title;
 
-        const state = document.createElement("div");
+        const state = document.createElement("span");
         state.className = "canvas-state";
         state.textContent = "进行中";
+        state.setAttribute("aria-live", "polite");
 
-        const controls = document.createElement("div");
+        const controls = document.createElement("span");
         controls.className = "canvas-controls";
         controls.append(state);
 
         titleRow.append(title, controls);
+
+        const content = document.createElement("div");
+        content.className = "canvas-panel-content";
+        content.id = contentId;
+        content.hidden = true;
+        let isExpanded = false;
+        titleRow.addEventListener("click", () => {
+          isExpanded = !isExpanded;
+          titleRow.setAttribute("aria-expanded", String(isExpanded));
+          content.hidden = !isExpanded;
+        });
 
         const frame = document.createElement("div");
         frame.className = "canvas-frame";
@@ -252,7 +268,8 @@
         caption.textContent = config.caption || "";
 
         frame.append(canvas);
-        panel.append(titleRow, frame, caption);
+        content.append(frame, caption);
+        panel.append(titleRow, content);
         if (typeof config.createController !== "function") {
           throw new Error(`Canvas "${config.id}" must provide createController().`);
         }

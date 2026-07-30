@@ -1,6 +1,7 @@
+import corridorLevel from "./corridor/level.js";
 import libraryLevel from "./library/level.js";
 import placeholderLevel from "./placeholder/level.js";
 
-const levels = [libraryLevel, placeholderLevel];
+const levels = [corridorLevel, libraryLevel, placeholderLevel];
 
 export default levels;

@@ -45,7 +45,7 @@ const libraryLevel = {
       id: "library-intro",
       type: "text",
       kicker: "library",
-      title: "智华楼一楼",
+      title: "智华楼一楼图书角",
       src: new URL("./content/intro.html", import.meta.url),
     },
     {

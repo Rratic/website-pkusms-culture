@@ -1,5 +1,5 @@
 const BOARD = {
-  x: 24,
+  x: 42,
   y: 64,
   size: 470,
 };
@@ -17,26 +17,7 @@ const MOVE_STEP = 4;
 const ROTATE_STEP = Math.PI / 180;
 const EPSILON = 0.01;
 const DIRECTION_EPSILON = 0.000001;
-const BOARD_WALL_THICKNESS = 6;
-const COLORS = [
-  "#2457c5",
-  "#d14b3f",
-  "#16794c",
-  "#a35f00",
-  "#7b4ab5",
-  "#087f8c",
-  "#ba2d65",
-  "#536d28",
-  "#b13d7a",
-  "#236fbc",
-  "#c4610e",
-  "#5d43a8",
-  "#00845a",
-  "#a63a46",
-  "#006c9c",
-  "#7c5b19",
-  "#9444a5",
-];
+const BOARD_WALL_THICKNESS = 18;
 
 const libraryLevel = {
   id: "library",
@@ -55,6 +36,8 @@ const libraryLevel = {
       caption: "拖动方块移动；选中方块后，拖动圆盘指针旋转。",
       width: WORKSPACE.width,
       height: WORKSPACE.height,
+      boxTexture: new URL(`../../assets/images/bookbox.jpg`, import.meta.url),
+      bookTextures: Array.from({ length: 17 }, (v, i) => new URL(`../../assets/images/book${i + 1}.png`, import.meta.url)),
       createController: createPackingController,
     },
     {
@@ -92,6 +75,21 @@ class LibraryPackingController {
     this.blockedUntil = 0;
     this.blockedTimer = 0;
     this.solved = false;
+    this.handleTextureLoad = () => this.draw();
+    this.boxTexture = null;
+    if (config.boxTexture) {
+      this.boxTexture = new Image();
+      this.boxTexture.decoding = "async";
+      this.boxTexture.addEventListener("load", this.handleTextureLoad);
+      this.boxTexture.src = config.boxTexture.href || String(config.boxTexture);
+    }
+    this.pieceTextures = (config.bookTextures || []).map((source) => {
+      const image = new Image();
+      image.decoding = "async";
+      image.addEventListener("load", this.handleTextureLoad);
+      image.src = source.href || String(source);
+      return image;
+    });
     this.handleResize = () => {
       this.resizeBuffer();
       this.draw();
@@ -127,6 +125,10 @@ class LibraryPackingController {
     this.canvas.removeEventListener("pointercancel", this.handlePointerUp);
     window.removeEventListener("resize", this.handleResize);
     window.clearTimeout(this.blockedTimer);
+    this.boxTexture?.removeEventListener("load", this.handleTextureLoad);
+    this.pieceTextures.forEach((image) => {
+      image.removeEventListener("load", this.handleTextureLoad);
+    });
   }
 
   onPointerDown(event) {
@@ -452,43 +454,43 @@ class LibraryPackingController {
     const ctx = this.ctx;
     const right = BOARD.x + BOARD.size;
     const bottom = BOARD.y + BOARD.size;
+    const textureReady = this.boxTexture?.complete && this.boxTexture.naturalWidth > 0;
 
     ctx.save();
-    ctx.fillStyle = "#fbfcfe";
-    ctx.fillRect(BOARD.x, BOARD.y, BOARD.size, BOARD.size);
+    if (textureReady) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(
+        this.boxTexture,
+        BOARD.x - BOARD_WALL_THICKNESS,
+        BOARD.y - BOARD_WALL_THICKNESS,
+        BOARD.size + BOARD_WALL_THICKNESS,
+        BOARD.size + BOARD_WALL_THICKNESS * 2,
+      );
+    } else {
+      ctx.fillStyle = "#fbfcfe";
+      ctx.fillRect(BOARD.x, BOARD.y, BOARD.size, BOARD.size);
 
-    ctx.strokeStyle = "#d9e0e8";
-    ctx.lineWidth = 1;
-    for (let step = 100; step < BOARD.size; step += 100) {
-      line(ctx, BOARD.x + step, BOARD.y, BOARD.x + step, BOARD.y + BOARD.size);
-      line(ctx, BOARD.x, BOARD.y + step, BOARD.x + BOARD.size, BOARD.y + step);
+      ctx.fillStyle = "#1f2937";
+      ctx.fillRect(
+        BOARD.x - BOARD_WALL_THICKNESS,
+        BOARD.y - BOARD_WALL_THICKNESS,
+        BOARD.size + BOARD_WALL_THICKNESS,
+        BOARD_WALL_THICKNESS,
+      );
+      ctx.fillRect(
+        BOARD.x - BOARD_WALL_THICKNESS,
+        BOARD.y,
+        BOARD_WALL_THICKNESS,
+        BOARD.size,
+      );
+      ctx.fillRect(
+        BOARD.x - BOARD_WALL_THICKNESS,
+        bottom,
+        BOARD.size + BOARD_WALL_THICKNESS,
+        BOARD_WALL_THICKNESS,
+      );
     }
-
-    ctx.fillStyle = "#1f2937";
-    ctx.fillRect(
-      BOARD.x - BOARD_WALL_THICKNESS,
-      BOARD.y - BOARD_WALL_THICKNESS,
-      BOARD.size + BOARD_WALL_THICKNESS,
-      BOARD_WALL_THICKNESS,
-    );
-    ctx.fillRect(
-      BOARD.x - BOARD_WALL_THICKNESS,
-      BOARD.y,
-      BOARD_WALL_THICKNESS,
-      BOARD.size,
-    );
-    ctx.fillRect(
-      BOARD.x - BOARD_WALL_THICKNESS,
-      bottom,
-      BOARD.size + BOARD_WALL_THICKNESS,
-      BOARD_WALL_THICKNESS,
-    );
-
-    ctx.strokeStyle = "#1f2937";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([8, 6]);
-    line(ctx, right + ctx.lineWidth / 2, BOARD.y - BOARD_WALL_THICKNESS, right + ctx.lineWidth / 2, bottom + BOARD_WALL_THICKNESS);
-    ctx.setLineDash([]);
 
     ctx.restore();
   }
@@ -514,30 +516,34 @@ class LibraryPackingController {
 
   drawPiece(piece, index) {
     const ctx = this.ctx;
-    const corners = getCorners(piece);
     const selected = index === this.selectedIndex;
     const blocked = selected && performance.now() < this.blockedUntil;
+    const texture = this.pieceTextures.length
+      ? this.pieceTextures[index % this.pieceTextures.length]
+      : null;
+    const half = PIECE_SIZE / 2;
 
     ctx.save();
+    ctx.translate(piece.x, piece.y);
+    ctx.rotate(piece.angle);
     ctx.beginPath();
-    ctx.moveTo(corners[0].x, corners[0].y);
-    corners.slice(1).forEach((corner) => ctx.lineTo(corner.x, corner.y));
-    ctx.closePath();
-    ctx.fillStyle = COLORS[index % COLORS.length];
-    ctx.fill();
+    ctx.rect(-half, -half, PIECE_SIZE, PIECE_SIZE);
+    ctx.clip();
 
-    if (selected) {
-      ctx.clip();
-      ctx.strokeStyle = blocked ? "#b42318" : "#111827";
-      ctx.lineWidth = 4;
-      ctx.stroke();
+    if (texture?.complete && texture.naturalWidth > 0) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(texture, -half, -half, PIECE_SIZE, PIECE_SIZE);
+    } else {
+      ctx.fillStyle = "#2457c5";
+      ctx.fillRect(-half, -half, PIECE_SIZE, PIECE_SIZE);
     }
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 15px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(index + 1), piece.x, piece.y);
+    if (selected) {
+      ctx.strokeStyle = blocked ? "#b42318" : "#111827";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(-half, -half, PIECE_SIZE, PIECE_SIZE);
+    }
     ctx.restore();
   }
 

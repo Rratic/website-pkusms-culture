@@ -312,10 +312,18 @@ h1 {
 	font-weight: 720;
 }
 
+.canvas-state::before {
+	content: "未完成";
+}
+
 .canvas-state.is-solved {
 	color: var(--green);
 	background: #eaf8f0;
 	border-color: #bde6ce;
+}
+
+.canvas-state.is-solved::before {
+	content: "已完成";
 }
 
 .canvas-panel-content {

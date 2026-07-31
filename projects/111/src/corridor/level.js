@@ -4,7 +4,7 @@ const corridorLevel = {
 		{
 			id: "corridor-intro",
 			type: "text",
-			kicker: "corridor",
+			kicker: true,
 			title: "智华楼一楼走廊",
 			src: new URL("./content/intro.html", import.meta.url),
 		},

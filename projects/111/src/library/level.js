@@ -1,3 +1,11 @@
+import {
+  canvasPointFromEvent,
+  distance,
+  line,
+  normalizeAngle,
+  resizeCanvasBuffer,
+} from "../canvas-utils.js";
+
 const BOARD = {
   x: 42,
   y: 64,
@@ -25,7 +33,7 @@ const libraryLevel = {
     {
       id: "library-intro",
       type: "text",
-      kicker: "library",
+      kicker: true,
       title: "智华楼一楼图书角",
       src: new URL("./content/intro.html", import.meta.url),
     },
@@ -60,11 +68,9 @@ function createPackingController(options) {
 }
 
 class LibraryPackingController {
-  constructor({ config, canvas, caption, stateBadge, onSolved }) {
+  constructor({ config, canvas, onSolved }) {
     this.config = config;
     this.canvas = canvas;
-    this.caption = caption;
-    this.stateBadge = stateBadge;
     this.onSolved = onSolved;
     this.ctx = canvas.getContext("2d");
     this.pieces = createPieces();
@@ -91,23 +97,26 @@ class LibraryPackingController {
       return image;
     });
     this.handleResize = () => {
-      this.resizeBuffer();
+      resizeCanvasBuffer(
+        this.canvas,
+        this.ctx,
+        this.config.width,
+        this.config.height,
+      );
       this.draw();
     };
     this.handlePointerDown = (event) => this.onPointerDown(event);
     this.handlePointerMove = (event) => this.onPointerMove(event);
     this.handlePointerUp = (event) => this.onPointerUp(event);
 
-    this.resizeBuffer();
+    resizeCanvasBuffer(
+      this.canvas,
+      this.ctx,
+      this.config.width,
+      this.config.height,
+    );
     this.bindEvents();
     this.draw();
-  }
-
-  resizeBuffer() {
-    const ratio = Math.max(1, window.devicePixelRatio || 1);
-    this.canvas.width = Math.round(this.config.width * ratio);
-    this.canvas.height = Math.round(this.config.height * ratio);
-    this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   }
 
   bindEvents() {
@@ -133,7 +142,12 @@ class LibraryPackingController {
 
   onPointerDown(event) {
     event.preventDefault();
-    const point = this.getCanvasPoint(event);
+    const point = canvasPointFromEvent(
+      this.canvas,
+      event,
+      this.config.width,
+      this.config.height,
+    );
 
     if (this.selectedIndex >= 0 && this.pointHitsDial(point)) {
       this.activeMode = "rotate";
@@ -165,7 +179,12 @@ class LibraryPackingController {
     }
 
     event.preventDefault();
-    const point = this.getCanvasPoint(event);
+    const point = canvasPointFromEvent(
+      this.canvas,
+      event,
+      this.config.width,
+      this.config.height,
+    );
     let advanced = false;
 
     if (this.activeMode === "move") {
@@ -380,14 +399,6 @@ class LibraryPackingController {
     return true;
   }
 
-  getCanvasPoint(event) {
-    const rect = this.canvas.getBoundingClientRect();
-    return {
-      x: ((event.clientX - rect.left) / rect.width) * this.config.width,
-      y: ((event.clientY - rect.top) / rect.height) * this.config.height,
-    };
-  }
-
   findPieceAt(point) {
     for (let index = this.pieces.length - 1; index >= 0; index -= 1) {
       if (pointInPiece(point, this.pieces[index])) {
@@ -421,9 +432,6 @@ class LibraryPackingController {
     }
 
     this.solved = true;
-    this.stateBadge.textContent = "已完成";
-    this.stateBadge.classList.add("is-solved");
-    this.caption.textContent = "书架整理完成。";
     this.draw();
     this.onSolved(this.config.id);
   }
@@ -717,28 +725,6 @@ function dotProduct(first, second) {
 
 function angleBetween(origin, point) {
   return Math.atan2(point.y - origin.y, point.x - origin.x);
-}
-
-function normalizeAngle(angle) {
-  let normalized = angle;
-  while (normalized <= -Math.PI) {
-    normalized += Math.PI * 2;
-  }
-  while (normalized > Math.PI) {
-    normalized -= Math.PI * 2;
-  }
-  return normalized;
-}
-
-function distance(first, second) {
-  return Math.hypot(first.x - second.x, first.y - second.y);
-}
-
-function line(ctx, x1, y1, x2, y2) {
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
 }
 
 export default libraryLevel;

@@ -9,6 +9,7 @@ import levels from "./levels.js";
   let startedAt = 0;
   let isComplete = false;
   let canvasState = new Map();
+  let canvasBadges = new Map();
   let activeCanvasControllers = [];
   let renderedBlocks = [];
   let renderRequestId = 0;
@@ -103,7 +104,7 @@ import levels from "./levels.js";
     if (block.kicker) {
       const kicker = document.createElement("div");
       kicker.className = "level-kicker";
-      kicker.textContent = block.kicker;
+      kicker.textContent = activeLevel.id;
       panel.append(kicker);
     }
 
@@ -137,8 +138,9 @@ import levels from "./levels.js";
 
     const state = document.createElement("span");
     state.className = "canvas-state";
-    state.textContent = "进行中";
+    state.setAttribute("aria-label", "未完成");
     state.setAttribute("aria-live", "polite");
+    canvasBadges.set(config.id, state);
 
     const controls = document.createElement("span");
     controls.className = "canvas-controls";
@@ -188,13 +190,11 @@ import levels from "./levels.js";
       config.createController({
         config,
         canvas,
-        caption,
-        stateBadge: state,
         onSolved: markCanvasSolved,
       }),
     );
 
-    return { block: config, element: panel, stateBadge: state };
+    return { block: config, element: panel };
   }
 
   function renderActionsBlock(block) {
@@ -260,6 +260,11 @@ import levels from "./levels.js";
     }
 
     canvasState.set(canvasId, true);
+    const badge = canvasBadges.get(canvasId);
+    if (badge) {
+      badge.classList.add("is-solved");
+      badge.setAttribute("aria-label", "已完成");
+    }
     const newlyVisible = updateBlockVisibility();
 
     if (Array.from(canvasState.values()).every(Boolean)) {
@@ -277,11 +282,9 @@ import levels from "./levels.js";
     }
 
     canvasState.forEach((value, canvasId) => canvasState.set(canvasId, true));
-    renderedBlocks.forEach(({ block, stateBadge }) => {
-      if (block.type === "canvas" && stateBadge) {
-        stateBadge.textContent = "已完成";
-        stateBadge.classList.add("is-solved");
-      }
+    canvasBadges.forEach((badge) => {
+      badge.classList.add("is-solved");
+      badge.setAttribute("aria-label", "已完成");
     });
     const newlyVisible = updateBlockVisibility();
     const completed = completeLevel();
@@ -297,6 +300,7 @@ import levels from "./levels.js";
     activeCanvasControllers.forEach((controller) => controller.destroy());
     activeCanvasControllers = [];
     renderedBlocks = [];
+    canvasBadges = new Map();
     activeLevel = null;
 
     const panel = document.createElement("article");
@@ -333,6 +337,7 @@ import levels from "./levels.js";
     activeCanvasControllers.forEach((controller) => controller.destroy());
     activeCanvasControllers = [];
     renderedBlocks = [];
+    canvasBadges = new Map();
     activeLevel = { ...level, blocks };
     startedAt = performance.now();
     isComplete = false;

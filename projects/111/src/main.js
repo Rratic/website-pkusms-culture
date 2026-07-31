@@ -72,10 +72,28 @@ import levels from "./levels.js";
     );
   }
 
-  function updateBlockVisibility() {
-    renderedBlocks.forEach(({ block, element }, index) => {
-      element.hidden = !isBlockUnlocked(block, index);
+  function scrollToBlock(element) {
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+
+    window.requestAnimationFrame(() => {
+      element.scrollIntoView({ behavior, block: "start" });
     });
+  }
+
+  function updateBlockVisibility() {
+    const newlyVisible = [];
+
+    renderedBlocks.forEach(({ block, element }, index) => {
+      const unlocked = isBlockUnlocked(block, index);
+      if (element.hidden && unlocked) {
+        newlyVisible.push(element);
+      }
+      element.hidden = !unlocked;
+    });
+
+    return newlyVisible;
   }
 
   function renderRichTextBlock(block) {
@@ -135,6 +153,10 @@ import levels from "./levels.js";
       const isExpanded = titleRow.getAttribute("aria-expanded") === "true";
       titleRow.setAttribute("aria-expanded", String(!isExpanded));
       content.hidden = isExpanded;
+
+      if (isExpanded === false && canvasState.get(config.id) !== true) {
+        scrollToBlock(panel);
+      }
     });
 
     const frame = document.createElement("div");
@@ -238,10 +260,14 @@ import levels from "./levels.js";
     }
 
     canvasState.set(canvasId, true);
-    updateBlockVisibility();
+    const newlyVisible = updateBlockVisibility();
 
     if (Array.from(canvasState.values()).every(Boolean)) {
       completeLevel();
+    }
+
+    if (newlyVisible.length > 0) {
+      scrollToBlock(newlyVisible[0]);
     }
   }
 
@@ -257,8 +283,14 @@ import levels from "./levels.js";
         stateBadge.classList.add("is-solved");
       }
     });
-    updateBlockVisibility();
-    return completeLevel();
+    const newlyVisible = updateBlockVisibility();
+    const completed = completeLevel();
+
+    if (newlyVisible.length > 0) {
+      scrollToBlock(newlyVisible[0]);
+    }
+
+    return completed;
   };
 
   function showLoadError(level, error) {

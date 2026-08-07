@@ -3,6 +3,7 @@ import {
   clamp,
   distance,
   line,
+  pointInRect,
   resizeCanvasBuffer,
   roundedRect,
 } from "../canvas-utils.js";
@@ -14,9 +15,13 @@ const INTERSECTION_HIT_RADIUS = 12;
 const DRAG_THRESHOLD = 6;
 const GEOMETRY_EPSILON = 0.8;
 const LABEL_EPSILON = 3;
+const MIN_VIEW_SCALE = 0.55;
+const MAX_VIEW_SCALE = 2.4;
+const ZOOM_STEP = 1.2;
 
 const PUZZLES = {
   transfer: buildTransferPuzzle(),
+  midpoint: buildMidpointPuzzle(),
   inversion: buildInversionPuzzle(),
   circumcenter: buildCircumcenterPuzzle(),
   lineLine: buildLineLinePuzzle(),
@@ -40,15 +45,26 @@ const compassLevel = {
       PUZZLES.transfer,
     ),
     textBlock(
+      "compass-midpoint-text",
+      "./content/midpoint.html",
+      ["compass-transfer"],
+    ),
+    canvasBlock(
+      "compass-midpoint",
+      "作中点",
+      PUZZLES.midpoint,
+      ["compass-transfer"],
+    ),
+    textBlock(
       "compass-inversion-text",
       "./content/inversion.html",
-      ["compass-transfer"],
+      ["compass-midpoint"],
     ),
     canvasBlock(
       "compass-inversion",
       "点的反演",
       PUZZLES.inversion,
-      ["compass-transfer"],
+      ["compass-midpoint"],
     ),
     textBlock(
       "compass-circumcenter-text",
@@ -100,7 +116,7 @@ function canvasBlock(id, title, puzzle, requires) {
     id,
     type: "canvas",
     title,
-    caption: "单击两个已知点作圆；单击交点取点；单击圆周隐藏；拖动画布平移；撤销可恢复。",
+    caption: "单击两个可见点作圆；单击交点取点；隐藏模式下单击点可隐藏；单击圆周可隐藏圆；拖动平移，滚轮缩放。",
     width: SIZE.width,
     height: SIZE.height,
     ...puzzle,
@@ -127,6 +143,36 @@ function buildTransferPuzzle() {
     expectedPoints: [D, DPrime, E],
     goalCircle: { centerLabel: "A", radius: distance(B, C) },
     guides: [],
+  };
+}
+
+function buildMidpointPuzzle() {
+  const A = point("A", 300, 360);
+  const B = point("B", 460, 360);
+  const radius = distance(A, B);
+  const firstPair = orderedIntersections(
+    geometryCircle(A, radius),
+    geometryCircle(B, radius),
+  );
+  const C = point("C", firstPair[0].x, firstPair[0].y);
+  const D = point("D", firstPair[1].x, firstPair[1].y);
+  const extensionPair = orderedIntersections(
+    geometryCircle(C, distance(C, D)),
+    geometryCircle(D, distance(C, D)),
+  );
+  const E = point("E", extensionPair[0].x, extensionPair[0].y);
+  const F = point("F", extensionPair[1].x, extensionPair[1].y);
+  const inverseF = inverseConstruction(A, radius, F, {
+    first: "U",
+    second: "V",
+    inverse: "M",
+  });
+
+  return {
+    points: [A, B],
+    expectedPoints: [C, D, E, F, ...inverseF.points],
+    goalPoints: ["M"],
+    guides: [{ type: "segment", from: "A", to: "B" }],
   };
 }
 
@@ -324,23 +370,32 @@ class CompassController {
     this.canvas = canvas;
     this.onSolved = onSolved;
     this.ctx = canvas.getContext("2d");
-    this.initialPointCount = config.points.length;
-    this.points = config.points.map((entry) => ({ ...entry, initial: true }));
+    this.points = config.points.map((entry) => ({
+      ...entry,
+      initial: true,
+      hidden: false,
+    }));
     this.circles = this.createInitialCircles();
     this.history = [];
     this.selectedPoint = -1;
     this.viewOffset = { x: 0, y: 0 };
+    this.viewScale = 1;
+    this.hidePointMode = false;
     this.pointer = null;
     this.solved = false;
     this.buttons = [
-      { id: "undo", label: "撤销", x: 738, y: 30, width: 66, height: 38 },
-      { id: "reset", label: "重置", x: 816, y: 30, width: 66, height: 38 },
+      { id: "zoomOut", label: "−", x: 590, y: 30, width: 38, height: 38 },
+      { id: "zoomIn", label: "+", x: 636, y: 30, width: 38, height: 38 },
+      { id: "hidePoint", label: "隐藏点", x: 682, y: 30, width: 82, height: 38 },
+      { id: "undo", label: "撤销", x: 772, y: 30, width: 54, height: 38 },
+      { id: "reset", label: "重置", x: 834, y: 30, width: 56, height: 38 },
     ];
 
     this.onPointerDown = this.handlePointerDown.bind(this);
     this.onPointerMove = this.handlePointerMove.bind(this);
     this.onPointerUp = this.handlePointerUp.bind(this);
     this.onPointerCancel = this.handlePointerCancel.bind(this);
+    this.onWheel = this.handleWheel.bind(this);
     this.onKeyDown = this.handleKeyDown.bind(this);
     this.onResize = () => {
       resizeCanvasBuffer(
@@ -363,6 +418,7 @@ class CompassController {
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerup", this.onPointerUp);
     this.canvas.addEventListener("pointercancel", this.onPointerCancel);
+    this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
     this.canvas.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("resize", this.onResize);
     this.updateAccessibility();
@@ -374,6 +430,7 @@ class CompassController {
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
+    this.canvas.removeEventListener("wheel", this.onWheel);
     this.canvas.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("resize", this.onResize);
   }
@@ -394,8 +451,21 @@ class CompassController {
     }
     if (event.key === "Escape") {
       this.selectedPoint = -1;
+      this.hidePointMode = false;
       this.draw();
     }
+  }
+
+  handleWheel(event) {
+    event.preventDefault();
+    const at = canvasPointFromEvent(
+      this.canvas,
+      event,
+      this.config.width,
+      this.config.height,
+    );
+    if (!pointInRect(at, BOARD)) return;
+    this.zoomAt(at, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP);
   }
 
   handlePointerDown(event) {
@@ -406,14 +476,22 @@ class CompassController {
       this.config.width,
       this.config.height,
     );
-    const button = this.buttons.find((entry) => insideRect(at, entry));
+    const button = this.buttons.find((entry) => pointInRect(at, entry));
     if (button) {
+      if (button.id === "zoomOut") this.zoomAt(boardCenter(), 1 / ZOOM_STEP);
+      if (button.id === "zoomIn") this.zoomAt(boardCenter(), ZOOM_STEP);
+      if (button.id === "hidePoint" && !this.solved) {
+        this.hidePointMode = !this.hidePointMode;
+        this.selectedPoint = -1;
+        this.updateAccessibility();
+        this.draw();
+      }
       if (this.solved) return;
       if (button.id === "undo") this.undo();
       if (button.id === "reset") this.reset();
       return;
     }
-    if (this.solved || !insideRect(at, BOARD)) return;
+    if (this.solved || !pointInRect(at, BOARD)) return;
 
     this.pointer = {
       id: event.pointerId,
@@ -470,19 +548,31 @@ class CompassController {
   }
 
   activateAt(screenPoint) {
-    const at = {
-      x: screenPoint.x - this.viewOffset.x,
-      y: screenPoint.y - this.viewOffset.y,
-    };
+    const at = this.screenToWorld(screenPoint);
 
     const pointIndex = this.findPoint(at);
     if (pointIndex >= 0) {
+      if (this.hidePointMode) {
+        const pointValue = this.points[pointIndex];
+        this.history.push({
+          type: "pointVisibility",
+          point: pointValue,
+          hidden: pointValue.hidden,
+        });
+        pointValue.hidden = true;
+        this.selectedPoint = -1;
+        this.updateAccessibility();
+        this.draw();
+        return;
+      }
       this.selectPoint(pointIndex);
       return;
     }
 
+    if (this.hidePointMode) return;
+
     const candidate = this.intersections().find(
-      (entry) => distance(entry, at) <= INTERSECTION_HIT_RADIUS,
+      (entry) => distance(entry, at) <= INTERSECTION_HIT_RADIUS / this.viewScale,
     );
     if (candidate) {
       const expected = this.config.expectedPoints.find(
@@ -491,7 +581,13 @@ class CompassController {
           distance(entry, candidate) <= LABEL_EPSILON,
       );
       const label = expected?.label || nextGenericLabel(this.points);
-      this.points.push({ ...candidate, label, initial: false, expected: Boolean(expected) });
+      this.points.push({
+        ...candidate,
+        label,
+        initial: false,
+        expected: Boolean(expected),
+        hidden: false,
+      });
       this.history.push({ type: "point" });
       this.selectedPoint = -1;
       this.updateAccessibility();
@@ -552,17 +648,24 @@ class CompassController {
     if (action.type === "circle") this.circles.pop();
     if (action.type === "point") this.points.pop();
     if (action.type === "visibility") action.circle.hidden = action.hidden;
+    if (action.type === "pointVisibility") action.point.hidden = action.hidden;
     this.selectedPoint = -1;
     this.updateAccessibility();
     this.draw();
   }
 
   reset() {
-    this.points.length = this.initialPointCount;
+    this.points = this.config.points.map((entry) => ({
+      ...entry,
+      initial: true,
+      hidden: false,
+    }));
     this.circles = this.createInitialCircles();
     this.history.length = 0;
     this.selectedPoint = -1;
     this.viewOffset = { x: 0, y: 0 };
+    this.viewScale = 1;
+    this.hidePointMode = false;
     this.updateAccessibility();
     this.draw();
   }
@@ -574,7 +677,7 @@ class CompassController {
     );
     const circleGoalSolved = !this.config.goalCircle || this.circles.some((entry) => {
       const center = this.points[entry.center];
-      return !entry.hidden &&
+      return this.isCircleActive(entry) &&
         center.label === this.config.goalCircle.centerLabel &&
         Math.abs(entry.radius - this.config.goalCircle.radius) <= LABEL_EPSILON;
     });
@@ -588,11 +691,16 @@ class CompassController {
 
   updateAccessibility() {
     const acquired = this.points.filter((entry) => entry.expected).length;
-    const visibleCircles = this.circles.filter((entry) => !entry.hidden).length;
+    const visiblePoints = this.points.filter((entry) => !entry.hidden).length;
+    const visibleCircles = this.circles.filter((entry) => this.isCircleActive(entry)).length;
     this.canvas.setAttribute(
       "aria-label",
-      `${this.config.title}，${visibleCircles} 个圆可见，取得 ${acquired} 个关键交点`,
+      `${this.config.title}，${visiblePoints} 个点、${visibleCircles} 个圆可用，缩放 ${Math.round(this.viewScale * 100)}%，取得 ${acquired} 个关键交点${this.hidePointMode ? "，隐藏点模式" : ""}`,
     );
+  }
+
+  isCircleActive(circleValue) {
+    return !circleValue.hidden && !this.points[circleValue.center]?.hidden;
   }
 
   intersections() {
@@ -601,7 +709,7 @@ class CompassController {
       for (let second = first + 1; second < this.circles.length; second += 1) {
         const firstCircle = this.circles[first];
         const secondCircle = this.circles[second];
-        if (firstCircle.hidden || secondCircle.hidden) continue;
+        if (!this.isCircleActive(firstCircle) || !this.isCircleActive(secondCircle)) continue;
         const geometryFirst = geometryCircle(
           this.points[firstCircle.center],
           firstCircle.radius,
@@ -611,11 +719,8 @@ class CompassController {
           secondCircle.radius,
         );
         for (const at of circleIntersections(geometryFirst, geometrySecond)) {
-          const screenPoint = {
-            x: at.x + this.viewOffset.x,
-            y: at.y + this.viewOffset.y,
-          };
-          if (!insideRect(screenPoint, BOARD)) continue;
+          const screenPoint = this.worldToScreen(at);
+          if (!pointInRect(screenPoint, BOARD)) continue;
           if (this.points.some((entry) => distance(entry, at) < 5)) continue;
           if (!candidates.some((entry) => distance(entry, at) < 5)) candidates.push(at);
         }
@@ -626,7 +731,8 @@ class CompassController {
 
   findPoint(at) {
     for (let index = this.points.length - 1; index >= 0; index -= 1) {
-      if (distance(this.points[index], at) <= POINT_HIT_RADIUS) return index;
+      if (this.points[index].hidden) continue;
+      if (distance(this.points[index], at) <= POINT_HIT_RADIUS / this.viewScale) return index;
     }
     return -1;
   }
@@ -634,9 +740,9 @@ class CompassController {
   findCircleAt(at) {
     for (let index = this.circles.length - 1; index >= 0; index -= 1) {
       const entry = this.circles[index];
-      if (entry.hidden) continue;
+      if (!this.isCircleActive(entry)) continue;
       const center = this.points[entry.center];
-      if (Math.abs(distance(center, at) - entry.radius) <= 7) return index;
+      if (Math.abs(distance(center, at) - entry.radius) <= 7 / this.viewScale) return index;
     }
     return -1;
   }
@@ -651,7 +757,10 @@ class CompassController {
     ctx.beginPath();
     ctx.rect(BOARD.left, BOARD.top, BOARD.right - BOARD.left, BOARD.bottom - BOARD.top);
     ctx.clip();
-    ctx.translate(this.viewOffset.x, this.viewOffset.y);
+    const center = boardCenter();
+    ctx.translate(center.x + this.viewOffset.x, center.y + this.viewOffset.y);
+    ctx.scale(this.viewScale, this.viewScale);
+    ctx.translate(-center.x, -center.y);
     this.drawGuides();
     this.drawCircles();
     this.drawIntersections();
@@ -665,19 +774,23 @@ class CompassController {
     ctx.save();
     ctx.textBaseline = "middle";
     for (const button of this.buttons) {
+      const active = button.id === "hidePoint" && this.hidePointMode;
+      const disabled = this.solved && !button.id.startsWith("zoom");
       ctx.save();
       ctx.shadowColor = "rgba(15, 23, 42, 0.14)";
       ctx.shadowBlur = 10;
       ctx.shadowOffsetY = 3;
-      ctx.fillStyle = this.solved ? "#f1f3f5" : "#ffffff";
-      ctx.strokeStyle = "#b9c3d0";
+      ctx.fillStyle = active ? "#e8eefc" : disabled ? "#f1f3f5" : "#ffffff";
+      ctx.strokeStyle = active ? "#2457c5" : "#b9c3d0";
       ctx.lineWidth = 1.5;
       roundedRect(ctx, button.x, button.y, button.width, button.height, 6);
       ctx.fill();
       ctx.shadowColor = "transparent";
       ctx.stroke();
-      ctx.fillStyle = this.solved ? "#9aa1aa" : "#28303b";
-      ctx.font = "500 14px system-ui, sans-serif";
+      ctx.fillStyle = disabled ? "#9aa1aa" : active ? "#2457c5" : "#28303b";
+      ctx.font = button.id.startsWith("zoom")
+        ? "500 22px system-ui, sans-serif"
+        : "500 14px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(button.label, button.x + button.width / 2, button.y + button.height / 2 + 1);
       ctx.restore();
@@ -695,10 +808,18 @@ class CompassController {
     ctx.clip();
     ctx.strokeStyle = "#edf0f3";
     ctx.lineWidth = 1;
-    const gridX = positiveModulo(this.viewOffset.x, 24);
-    const gridY = positiveModulo(this.viewOffset.y, 24);
-    for (let x = BOARD.left + gridX; x < BOARD.right; x += 24) line(ctx, x, BOARD.top, x, BOARD.bottom);
-    for (let y = BOARD.top + gridY; y < BOARD.bottom; y += 24) line(ctx, BOARD.left, y, BOARD.right, y);
+    const topLeft = this.screenToWorld({ x: BOARD.left, y: BOARD.top });
+    const bottomRight = this.screenToWorld({ x: BOARD.right, y: BOARD.bottom });
+    const firstGridX = Math.floor(topLeft.x / 24) * 24;
+    const firstGridY = Math.floor(topLeft.y / 24) * 24;
+    for (let worldX = firstGridX; worldX <= bottomRight.x; worldX += 24) {
+      const screenX = this.worldToScreen({ x: worldX, y: 0 }).x;
+      line(ctx, screenX, BOARD.top, screenX, BOARD.bottom);
+    }
+    for (let worldY = firstGridY; worldY <= bottomRight.y; worldY += 24) {
+      const screenY = this.worldToScreen({ x: 0, y: worldY }).y;
+      line(ctx, BOARD.left, screenY, BOARD.right, screenY);
+    }
     ctx.restore();
     ctx.strokeStyle = "#cfd6df";
     ctx.lineWidth = 1;
@@ -712,9 +833,13 @@ class CompassController {
       const to = this.points.find((entry) => entry.label === guide.to);
       if (!from || !to) continue;
       ctx.strokeStyle = "rgba(91, 103, 119, 0.48)";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([8, 7]);
-      drawInfiniteLine(ctx, from, to);
+      ctx.lineWidth = 1.5 / this.viewScale;
+      ctx.setLineDash([8 / this.viewScale, 7 / this.viewScale]);
+      if (guide.type === "segment") {
+        line(ctx, from.x, from.y, to.x, to.y);
+      } else {
+        drawInfiniteLine(ctx, from, to);
+      }
       ctx.setLineDash([]);
     }
   }
@@ -722,10 +847,10 @@ class CompassController {
   drawCircles() {
     const ctx = this.ctx;
     this.circles.forEach((entry) => {
-      if (entry.hidden) return;
+      if (!this.isCircleActive(entry)) return;
       const center = this.points[entry.center];
       ctx.strokeStyle = entry.initial ? "#a8afb8" : "#2457c5";
-      ctx.lineWidth = entry.initial ? 2.5 : 1.6;
+      ctx.lineWidth = (entry.initial ? 2.5 : 1.6) / this.viewScale;
       ctx.setLineDash([]);
       circle(ctx, center.x, center.y, entry.radius);
     });
@@ -736,7 +861,7 @@ class CompassController {
     for (const entry of this.intersections()) {
       ctx.fillStyle = "#7b8490";
       ctx.beginPath();
-      ctx.arc(entry.x, entry.y, 4, 0, Math.PI * 2);
+      ctx.arc(entry.x, entry.y, 4 / this.viewScale, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -744,17 +869,53 @@ class CompassController {
   drawPoints() {
     const ctx = this.ctx;
     this.points.forEach((entry, index) => {
+      if (entry.hidden) return;
       const selected = index === this.selectedPoint;
       ctx.fillStyle = entry.initial ? "#1f2937" : entry.expected ? "#16794c" : "#2457c5";
       ctx.strokeStyle = selected ? "#f59e0b" : "#ffffff";
-      ctx.lineWidth = selected ? 4 : 2;
-      circle(ctx, entry.x, entry.y, selected ? 8 : 6, true);
+      ctx.lineWidth = (selected ? 4 : 2) / this.viewScale;
+      circle(ctx, entry.x, entry.y, (selected ? 8 : 6) / this.viewScale, true);
       if (entry.initial) {
         ctx.fillStyle = "#202631";
-        ctx.font = "600 14px system-ui, sans-serif";
-        ctx.fillText(entry.label, entry.x + 11, entry.y - 11);
+        ctx.font = `600 ${14 / this.viewScale}px system-ui, sans-serif`;
+        ctx.fillText(
+          entry.label,
+          entry.x + 11 / this.viewScale,
+          entry.y - 11 / this.viewScale,
+        );
       }
     });
+  }
+
+  screenToWorld(screenPoint) {
+    const center = boardCenter();
+    return {
+      x: center.x + (screenPoint.x - center.x - this.viewOffset.x) / this.viewScale,
+      y: center.y + (screenPoint.y - center.y - this.viewOffset.y) / this.viewScale,
+    };
+  }
+
+  worldToScreen(worldPoint) {
+    const center = boardCenter();
+    return {
+      x: center.x + this.viewOffset.x + (worldPoint.x - center.x) * this.viewScale,
+      y: center.y + this.viewOffset.y + (worldPoint.y - center.y) * this.viewScale,
+    };
+  }
+
+  zoomAt(screenPoint, factor) {
+    const previousScale = this.viewScale;
+    const nextScale = clamp(previousScale * factor, MIN_VIEW_SCALE, MAX_VIEW_SCALE);
+    if (Math.abs(nextScale - previousScale) < 0.0001) return;
+    const worldPoint = this.screenToWorld(screenPoint);
+    const center = boardCenter();
+    this.viewScale = nextScale;
+    this.viewOffset = {
+      x: screenPoint.x - center.x - (worldPoint.x - center.x) * nextScale,
+      y: screenPoint.y - center.y - (worldPoint.y - center.y) * nextScale,
+    };
+    this.updateAccessibility();
+    this.draw();
   }
 }
 
@@ -824,16 +985,11 @@ function nextGenericLabel(points) {
   return `Z${index}`;
 }
 
-function positiveModulo(value, divisor) {
-  return ((value % divisor) + divisor) % divisor;
-}
-
-function insideRect(pointValue, rect) {
-  const right = rect.right ?? rect.x + rect.width;
-  const bottom = rect.bottom ?? rect.y + rect.height;
-  const left = rect.left ?? rect.x;
-  const top = rect.top ?? rect.y;
-  return pointValue.x >= left && pointValue.x <= right && pointValue.y >= top && pointValue.y <= bottom;
+function boardCenter() {
+  return {
+    x: (BOARD.left + BOARD.right) / 2,
+    y: (BOARD.top + BOARD.bottom) / 2,
+  };
 }
 
 function circle(ctx, x, y, radius, fill = false) {

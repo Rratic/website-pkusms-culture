@@ -43,3 +43,11 @@ export function roundedRect(context, x, y, width, height, radius) {
   context.beginPath();
   context.roundRect(x, y, width, height, radius);
 }
+
+export function pointInRect(point, rect) {
+  const left = rect.left ?? rect.x;
+  const top = rect.top ?? rect.y;
+  const right = rect.right ?? left + rect.width;
+  const bottom = rect.bottom ?? top + rect.height;
+  return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+}

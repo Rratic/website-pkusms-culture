@@ -46,14 +46,12 @@ const hyperbolicLevel = {
   id: "hyperbolic",
   blocks: [
     {
-      id: "hyperbolic-intro",
       type: "text",
       kicker: true,
       title: "双曲圆盘",
       src: new URL("./content/intro.html", import.meta.url),
     },
     {
-      id: "hyperbolic-center",
       type: "canvas",
       title: "寻找双曲圆心",
       caption: "点击相邻七边形移动；拖动画面选择移动方向。",
@@ -335,7 +333,7 @@ class HyperRogueController {
     this.solved = true;
     this.canvas.setAttribute("aria-label", `已找到双曲圆心，共移动 ${this.moves} 步`);
     this.draw();
-    this.onSolved(this.config.id);
+    this.onSolved();
   }
 
   draw() {

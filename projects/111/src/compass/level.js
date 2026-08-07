@@ -32,95 +32,41 @@ const compassLevel = {
   id: "compass",
   blocks: [
     {
-      id: "compass-intro",
       type: "text",
       kicker: true,
       title: "单规作图",
       src: new URL("./content/intro.html", import.meta.url),
     },
-    textBlock("compass-transfer-text", "./content/transfer.html"),
-    canvasBlock(
-      "compass-transfer",
-      "长度转移",
-      PUZZLES.transfer,
-    ),
-    textBlock(
-      "compass-midpoint-text",
-      "./content/midpoint.html",
-      ["compass-transfer"],
-    ),
-    canvasBlock(
-      "compass-midpoint",
-      "作中点",
-      PUZZLES.midpoint,
-      ["compass-transfer"],
-    ),
-    textBlock(
-      "compass-inversion-text",
-      "./content/inversion.html",
-      ["compass-midpoint"],
-    ),
-    canvasBlock(
-      "compass-inversion",
-      "点的反演",
-      PUZZLES.inversion,
-      ["compass-midpoint"],
-    ),
-    textBlock(
-      "compass-circumcenter-text",
-      "./content/circumcenter.html",
-      ["compass-inversion"],
-    ),
-    canvasBlock(
-      "compass-circumcenter",
-      "三角形外心",
-      PUZZLES.circumcenter,
-      ["compass-inversion"],
-    ),
-    textBlock(
-      "compass-line-line-text",
-      "./content/line-line.html",
-      ["compass-circumcenter"],
-    ),
-    canvasBlock(
-      "compass-line-line",
-      "直线与直线交点",
-      PUZZLES.lineLine,
-      ["compass-circumcenter"],
-    ),
-    textBlock(
-      "compass-line-circle-text",
-      "./content/line-circle.html",
-      ["compass-line-line"],
-    ),
-    canvasBlock(
-      "compass-line-circle",
-      "圆与直线交点",
-      PUZZLES.lineCircle,
-      ["compass-line-line"],
-    ),
+    textBlock("./content/transfer.html"),
+    canvasBlock("长度转移", PUZZLES.transfer),
+    textBlock("./content/midpoint.html"),
+    canvasBlock("作中点", PUZZLES.midpoint),
+    textBlock("./content/inversion.html"),
+    canvasBlock("点的反演", PUZZLES.inversion),
+    textBlock("./content/circumcenter.html"),
+    canvasBlock("三角形外心", PUZZLES.circumcenter),
+    textBlock("./content/line-line.html"),
+    canvasBlock("直线与直线交点", PUZZLES.lineLine),
+    textBlock("./content/line-circle.html"),
+    canvasBlock("圆与直线交点", PUZZLES.lineCircle),
   ],
 };
 
-function textBlock(id, src, requires) {
+function textBlock(src) {
   return {
-    id,
     type: "text",
     src: new URL(src, import.meta.url),
-    ...(requires ? { requires } : {}),
   };
 }
 
-function canvasBlock(id, title, puzzle, requires) {
+function canvasBlock(title, puzzle) {
   return {
-    id,
     type: "canvas",
     title,
     caption: "单击两个可见点作圆；单击交点取点；隐藏模式下单击点可隐藏；单击圆周可隐藏圆；拖动平移，滚轮缩放。",
     width: SIZE.width,
     height: SIZE.height,
     ...puzzle,
-    ...(requires ? { requires } : {}),
     createController: (options) => new CompassController(options),
   };
 }
@@ -686,7 +632,7 @@ class CompassController {
     this.solved = true;
     this.updateAccessibility();
     this.draw();
-    this.onSolved(this.config.id);
+    this.onSolved();
   }
 
   updateAccessibility() {

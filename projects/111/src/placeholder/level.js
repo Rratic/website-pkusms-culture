@@ -2,7 +2,6 @@ const placeholderLevel = {
   id: "placeholder",
   blocks: [
     {
-      id: "placeholder-intro",
       type: "text",
       kicker: true,
       title: "占位",

@@ -37,7 +37,7 @@ import levels from "./levels.js";
 
   async function loadTextBlock(block) {
     if (!block.src) {
-      throw new Error(`Text block "${block.id}" must provide src.`);
+      throw new Error("Text block must provide src.");
     }
 
     const response = await fetch(block.src);
@@ -56,21 +56,11 @@ import levels from "./levels.js";
     );
   }
 
-  function getRequiredCanvasIds(block, blockIndex) {
-    if (Array.isArray(block.requires)) {
-      return block.requires;
-    }
-
+  function isBlockUnlocked(blockIndex) {
     return activeLevel.blocks
       .slice(0, blockIndex)
       .filter((precedingBlock) => precedingBlock.type === "canvas")
-      .map((precedingBlock) => precedingBlock.id);
-  }
-
-  function isBlockUnlocked(block, blockIndex) {
-    return getRequiredCanvasIds(block, blockIndex).every(
-      (canvasId) => canvasState.get(canvasId) === true,
-    );
+      .every((precedingBlock) => canvasState.get(precedingBlock) === true);
   }
 
   function scrollToBlock(element) {
@@ -86,8 +76,8 @@ import levels from "./levels.js";
   function updateBlockVisibility() {
     const newlyVisible = [];
 
-    renderedBlocks.forEach(({ block, element }, index) => {
-      const unlocked = isBlockUnlocked(block, index);
+    renderedBlocks.forEach(({ element }, index) => {
+      const unlocked = isBlockUnlocked(index);
       if (element.hidden && unlocked) {
         newlyVisible.push(element);
       }
@@ -140,7 +130,7 @@ import levels from "./levels.js";
     state.className = "canvas-state";
     state.setAttribute("aria-label", "未完成");
     state.setAttribute("aria-live", "polite");
-    canvasBadges.set(config.id, state);
+    canvasBadges.set(config, state);
 
     const controls = document.createElement("span");
     controls.className = "canvas-controls";
@@ -156,7 +146,7 @@ import levels from "./levels.js";
       titleRow.setAttribute("aria-expanded", String(!isExpanded));
       content.hidden = isExpanded;
 
-      if (isExpanded === false && canvasState.get(config.id) !== true) {
+      if (isExpanded === false && canvasState.get(config) !== true) {
         scrollToBlock(panel);
       }
     });
@@ -183,14 +173,14 @@ import levels from "./levels.js";
     panel.append(titleRow, content);
 
     if (typeof config.createController !== "function") {
-      throw new Error(`Canvas "${config.id}" must provide createController().`);
+      throw new Error(`Canvas "${config.title}" must provide createController().`);
     }
 
     activeCanvasControllers.push(
       config.createController({
         config,
         canvas,
-        onSolved: markCanvasSolved,
+        onSolved: () => markCanvasSolved(config),
       }),
     );
 
@@ -254,13 +244,13 @@ import levels from "./levels.js";
     return true;
   }
 
-  function markCanvasSolved(canvasId) {
-    if (!canvasState.has(canvasId)) {
+  function markCanvasSolved(canvasBlock) {
+    if (!canvasState.has(canvasBlock)) {
       return;
     }
 
-    canvasState.set(canvasId, true);
-    const badge = canvasBadges.get(canvasId);
+    canvasState.set(canvasBlock, true);
+    const badge = canvasBadges.get(canvasBlock);
     if (badge) {
       badge.classList.add("is-solved");
       badge.setAttribute("aria-label", "已完成");
@@ -281,7 +271,7 @@ import levels from "./levels.js";
       return false;
     }
 
-    canvasState.forEach((value, canvasId) => canvasState.set(canvasId, true));
+    canvasState.forEach((_, canvasBlock) => canvasState.set(canvasBlock, true));
     canvasBadges.forEach((badge) => {
       badge.classList.add("is-solved");
       badge.setAttribute("aria-label", "已完成");
@@ -341,7 +331,7 @@ import levels from "./levels.js";
     activeLevel = { ...level, blocks };
     startedAt = performance.now();
     isComplete = false;
-    canvasState = new Map(getCanvasBlocks(activeLevel).map((canvas) => [canvas.id, false]));
+    canvasState = new Map(getCanvasBlocks(activeLevel).map((canvas) => [canvas, false]));
 
     renderedBlocks = activeLevel.blocks.map(renderBlock);
     levelContent.replaceChildren(...renderedBlocks.map(({ element }) => element));

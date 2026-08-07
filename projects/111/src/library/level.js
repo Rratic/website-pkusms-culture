@@ -31,14 +31,12 @@ const libraryLevel = {
   id: "library",
   blocks: [
     {
-      id: "library-intro",
       type: "text",
       kicker: true,
       title: "智华楼一楼图书角",
       src: new URL("./content/intro.html", import.meta.url),
     },
     {
-      id: "library-packing",
       type: "canvas",
       title: "书架",
       caption: "拖动方块移动；选中方块后，拖动圆盘指针旋转。",
@@ -49,15 +47,11 @@ const libraryLevel = {
       createController: createPackingController,
     },
     {
-      id: "library-complete-story",
       type: "text",
-      requires: ["library-packing"],
       src: new URL("./content/complete.html", import.meta.url),
     },
     {
-      id: "library-exit",
       type: "actions",
-      requires: ["library-packing"],
       actions: [{ label: "前往地下室", target: "placeholder" }],
     },
   ],
@@ -433,7 +427,7 @@ class LibraryPackingController {
 
     this.solved = true;
     this.draw();
-    this.onSolved(this.config.id);
+    this.onSolved();
   }
 
   draw() {

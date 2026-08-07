@@ -1,357 +1,362 @@
 import levels from "./levels.js";
 
-  const STORAGE_KEY = "project-111:level-times";
-  const LEVELS = levels.filter(Boolean);
-  const levelsById = new Map(LEVELS.map((level) => [level.id, level]));
-  const levelContent = document.querySelector("#level-content");
+const STORAGE_KEY = "project-111:level-times";
+const LEVELS = levels.filter(Boolean);
+const levelsById = new Map(LEVELS.map((level) => [level.id, level]));
+const levelContent = document.querySelector("#level-content");
 
-  let activeLevel = null;
-  let startedAt = 0;
-  let isComplete = false;
-  let canvasState = new Map();
-  let canvasBadges = new Map();
-  let activeCanvasControllers = [];
-  let renderedBlocks = [];
-  let renderRequestId = 0;
+let activeLevel = null;
+let startedAt = 0;
+let isComplete = false;
+let canvasState = [];
+let canvasBadges = [];
+let activeCanvasControllers = [];
+let renderedBlocks = [];
+let renderRequestId = 0;
 
-  function readRecords() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    } catch (error) {
-      return {};
-    }
+function readRecords() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeRecords(records) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+function getLevelFromHash() {
+  const id = decodeURIComponent(location.hash.replace(/^#/, ""));
+  return levelsById.get(id) || LEVELS[0];
+}
+
+function getCanvasBlocks(level) {
+  return (level.blocks || []).filter((block) => block.type === "canvas");
+}
+
+async function loadTextBlock(block) {
+  if (!block.src) {
+    throw new Error("Text block must provide src.");
   }
 
-  function writeRecords(records) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  const response = await fetch(block.src);
+  if (!response.ok) {
+    throw new Error(`Unable to load ${response.url}: HTTP ${response.status}.`);
   }
 
-  function getLevelFromHash() {
-    const id = decodeURIComponent(location.hash.replace(/^#/, ""));
-    return levelsById.get(id) || LEVELS[0];
+  return { ...block, html: await response.text() };
+}
+
+async function loadLevelBlocks(level) {
+  return Promise.all(
+    (level.blocks || []).map((block) =>
+      block.type === "text" ? loadTextBlock(block) : block,
+    ),
+  );
+}
+
+function isBlockUnlocked(blockIndex) {
+  const precedingCanvasCount = activeLevel.blocks
+    .slice(0, blockIndex)
+    .filter((precedingBlock) => precedingBlock.type === "canvas")
+    .length;
+  return canvasState.slice(0, precedingCanvasCount).every(Boolean);
+}
+
+function scrollToBlock(element) {
+  const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : "smooth";
+
+  window.requestAnimationFrame(() => {
+    element.scrollIntoView({ behavior, block: "start" });
+  });
+}
+
+function updateBlockVisibility() {
+  const newlyVisible = [];
+
+  renderedBlocks.forEach(({ element }, index) => {
+    const unlocked = isBlockUnlocked(index);
+    if (element.hidden && unlocked) {
+      newlyVisible.push(element);
+    }
+    element.hidden = !unlocked;
+  });
+
+  return newlyVisible;
+}
+
+function renderRichTextBlock(block) {
+  const panel = document.createElement("article");
+  panel.className = "story-panel";
+
+  if (block.kicker) {
+    const kicker = document.createElement("div");
+    kicker.className = "level-kicker";
+    kicker.textContent = activeLevel.id;
+    panel.append(kicker);
   }
 
-  function getCanvasBlocks(level) {
-    return (level.blocks || []).filter((block) => block.type === "canvas");
+  if (block.title) {
+    const title = document.createElement("h1");
+    title.textContent = block.title;
+    panel.append(title);
   }
 
-  async function loadTextBlock(block) {
-    if (!block.src) {
-      throw new Error("Text block must provide src.");
-    }
+  const content = document.createElement("div");
+  content.className = "rich-text";
+  content.innerHTML = block.html || "";
+  panel.append(content);
+  return { block, element: panel };
+}
 
-    const response = await fetch(block.src);
-    if (!response.ok) {
-      throw new Error(`Unable to load ${response.url}: HTTP ${response.status}.`);
-    }
+function renderCanvasBlock(config, blockIndex) {
+  const canvasIndex = canvasBadges.length;
+  const panel = document.createElement("section");
+  panel.className = "canvas-panel";
 
-    return { ...block, html: await response.text() };
+  const contentId = `canvas-panel-content-${blockIndex}`;
+  const titleRow = document.createElement("button");
+  titleRow.className = "canvas-title-row";
+  titleRow.type = "button";
+  titleRow.setAttribute("aria-expanded", "false");
+  titleRow.setAttribute("aria-controls", contentId);
+
+  const title = document.createElement("span");
+  title.className = "canvas-title";
+  title.textContent = config.title;
+
+  const state = document.createElement("span");
+  state.className = "canvas-state";
+  state.setAttribute("aria-label", "未完成");
+  state.setAttribute("aria-live", "polite");
+  canvasBadges.push(state);
+
+  const controls = document.createElement("span");
+  controls.className = "canvas-controls";
+  controls.append(state);
+  titleRow.append(title, controls);
+
+  const content = document.createElement("div");
+  content.className = "canvas-panel-content";
+  content.id = contentId;
+  content.hidden = true;
+  titleRow.addEventListener("click", () => {
+    const isExpanded = titleRow.getAttribute("aria-expanded") === "true";
+    titleRow.setAttribute("aria-expanded", String(!isExpanded));
+    content.hidden = isExpanded;
+
+    if (isExpanded === false && canvasState[canvasIndex] !== true) {
+      scrollToBlock(panel);
+    }
+  });
+
+  const frame = document.createElement("div");
+  frame.className = "canvas-frame";
+  frame.style.setProperty("--canvas-width", config.width);
+  frame.style.setProperty("--canvas-height", config.height);
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "puzzle-canvas";
+  canvas.width = config.width;
+  canvas.height = config.height;
+  canvas.tabIndex = 0;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", config.title);
+
+  const caption = document.createElement("div");
+  caption.className = "canvas-caption";
+  caption.textContent = config.caption || "";
+
+  frame.append(canvas);
+  content.append(frame, caption);
+  panel.append(titleRow, content);
+
+  if (typeof config.createController !== "function") {
+    throw new Error(`Canvas "${config.title}" must provide createController().`);
   }
 
-  async function loadLevelBlocks(level) {
-    return Promise.all(
-      (level.blocks || []).map((block) =>
-        block.type === "text" ? loadTextBlock(block) : block,
-      ),
-    );
+  activeCanvasControllers.push(
+    config.createController({
+      config,
+      canvas,
+      onSolved: () => markCanvasSolved(canvasIndex, state),
+    }),
+  );
+
+  return { block: config, element: panel };
+}
+
+function renderActionsBlock(block) {
+  const panel = document.createElement("footer");
+  panel.className = "level-actions";
+
+  const actions = document.createElement("div");
+  actions.className = "exit-actions";
+  actions.append(
+    ...(block.actions || []).map((action) => {
+      const link = document.createElement("a");
+      link.className = "exit-button";
+      link.href = `#${encodeURIComponent(action.target)}`;
+      link.textContent = action.label;
+      return link;
+    }),
+  );
+
+  panel.append(actions);
+  return { block, element: panel };
+}
+
+function renderBlock(block, blockIndex) {
+  if (block.type === "text") {
+    return renderRichTextBlock(block);
   }
 
-  function isBlockUnlocked(blockIndex) {
-    return activeLevel.blocks
-      .slice(0, blockIndex)
-      .filter((precedingBlock) => precedingBlock.type === "canvas")
-      .every((precedingBlock) => canvasState.get(precedingBlock) === true);
+  if (block.type === "canvas") {
+    return renderCanvasBlock(block, blockIndex);
   }
 
-  function scrollToBlock(element) {
-    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ? "auto"
-      : "smooth";
-
-    window.requestAnimationFrame(() => {
-      element.scrollIntoView({ behavior, block: "start" });
-    });
+  if (block.type === "actions") {
+    return renderActionsBlock(block);
   }
 
-  function updateBlockVisibility() {
-    const newlyVisible = [];
+  throw new Error(`Unknown level block type: "${block.type}".`);
+}
 
-    renderedBlocks.forEach(({ element }, index) => {
-      const unlocked = isBlockUnlocked(index);
-      if (element.hidden && unlocked) {
-        newlyVisible.push(element);
-      }
-      element.hidden = !unlocked;
-    });
-
-    return newlyVisible;
+function completeLevel() {
+  if (isComplete) {
+    return false;
   }
 
-  function renderRichTextBlock(block) {
-    const panel = document.createElement("article");
-    panel.className = "story-panel";
+  isComplete = true;
+  const elapsedMs = performance.now() - startedAt;
+  const records = readRecords();
+  const current = records[activeLevel.id] || {};
 
-    if (block.kicker) {
-      const kicker = document.createElement("div");
-      kicker.className = "level-kicker";
-      kicker.textContent = activeLevel.id;
-      panel.append(kicker);
-    }
-
-    if (block.title) {
-      const title = document.createElement("h1");
-      title.textContent = block.title;
-      panel.append(title);
-    }
-
-    const content = document.createElement("div");
-    content.className = "rich-text";
-    content.innerHTML = block.html || "";
-    panel.append(content);
-    return { block, element: panel };
-  }
-
-  function renderCanvasBlock(config, blockIndex) {
-    const panel = document.createElement("section");
-    panel.className = "canvas-panel";
-
-    const contentId = `canvas-panel-content-${blockIndex}`;
-    const titleRow = document.createElement("button");
-    titleRow.className = "canvas-title-row";
-    titleRow.type = "button";
-    titleRow.setAttribute("aria-expanded", "false");
-    titleRow.setAttribute("aria-controls", contentId);
-
-    const title = document.createElement("span");
-    title.className = "canvas-title";
-    title.textContent = config.title;
-
-    const state = document.createElement("span");
-    state.className = "canvas-state";
-    state.setAttribute("aria-label", "未完成");
-    state.setAttribute("aria-live", "polite");
-    canvasBadges.set(config, state);
-
-    const controls = document.createElement("span");
-    controls.className = "canvas-controls";
-    controls.append(state);
-    titleRow.append(title, controls);
-
-    const content = document.createElement("div");
-    content.className = "canvas-panel-content";
-    content.id = contentId;
-    content.hidden = true;
-    titleRow.addEventListener("click", () => {
-      const isExpanded = titleRow.getAttribute("aria-expanded") === "true";
-      titleRow.setAttribute("aria-expanded", String(!isExpanded));
-      content.hidden = isExpanded;
-
-      if (isExpanded === false && canvasState.get(config) !== true) {
-        scrollToBlock(panel);
-      }
-    });
-
-    const frame = document.createElement("div");
-    frame.className = "canvas-frame";
-    frame.style.setProperty("--canvas-width", config.width);
-    frame.style.setProperty("--canvas-height", config.height);
-
-    const canvas = document.createElement("canvas");
-    canvas.className = "puzzle-canvas";
-    canvas.width = config.width;
-    canvas.height = config.height;
-    canvas.tabIndex = 0;
-    canvas.setAttribute("role", "img");
-    canvas.setAttribute("aria-label", config.title);
-
-    const caption = document.createElement("div");
-    caption.className = "canvas-caption";
-    caption.textContent = config.caption || "";
-
-    frame.append(canvas);
-    content.append(frame, caption);
-    panel.append(titleRow, content);
-
-    if (typeof config.createController !== "function") {
-      throw new Error(`Canvas "${config.title}" must provide createController().`);
-    }
-
-    activeCanvasControllers.push(
-      config.createController({
-        config,
-        canvas,
-        onSolved: () => markCanvasSolved(config),
-      }),
-    );
-
-    return { block: config, element: panel };
-  }
-
-  function renderActionsBlock(block) {
-    const panel = document.createElement("footer");
-    panel.className = "level-actions";
-
-    const actions = document.createElement("div");
-    actions.className = "exit-actions";
-    actions.append(
-      ...(block.actions || []).map((action) => {
-        const link = document.createElement("a");
-        link.className = "exit-button";
-        link.href = `#${encodeURIComponent(action.target)}`;
-        link.textContent = action.label;
-        return link;
-      }),
-    );
-
-    panel.append(actions);
-    return { block, element: panel };
-  }
-
-  function renderBlock(block, blockIndex) {
-    if (block.type === "text") {
-      return renderRichTextBlock(block);
-    }
-
-    if (block.type === "canvas") {
-      return renderCanvasBlock(block, blockIndex);
-    }
-
-    if (block.type === "actions") {
-      return renderActionsBlock(block);
-    }
-
-    throw new Error(`Unknown level block type: "${block.type}".`);
-  }
-
-  function completeLevel() {
-    if (isComplete) {
-      return false;
-    }
-
-    isComplete = true;
-    const elapsedMs = performance.now() - startedAt;
-    const records = readRecords();
-    const current = records[activeLevel.id] || {};
-
-    records[activeLevel.id] = {
-      attempts: (current.attempts || 0) + 1,
-      bestMs: current.bestMs == null ? elapsedMs : Math.min(current.bestMs, elapsedMs),
-      lastMs: elapsedMs,
-      completedAt: new Date().toISOString(),
-    };
-
-    writeRecords(records);
-    return true;
-  }
-
-  function markCanvasSolved(canvasBlock) {
-    if (!canvasState.has(canvasBlock)) {
-      return;
-    }
-
-    canvasState.set(canvasBlock, true);
-    const badge = canvasBadges.get(canvasBlock);
-    if (badge) {
-      badge.classList.add("is-solved");
-      badge.setAttribute("aria-label", "已完成");
-    }
-    const newlyVisible = updateBlockVisibility();
-
-    if (Array.from(canvasState.values()).every(Boolean)) {
-      completeLevel();
-    }
-
-    if (newlyVisible.length > 0) {
-      scrollToBlock(newlyVisible[0]);
-    }
-  }
-
-  window.completeCurrentLevel = () => {
-    if (!activeLevel || isComplete) {
-      return false;
-    }
-
-    canvasState.forEach((_, canvasBlock) => canvasState.set(canvasBlock, true));
-    canvasBadges.forEach((badge) => {
-      badge.classList.add("is-solved");
-      badge.setAttribute("aria-label", "已完成");
-    });
-    const newlyVisible = updateBlockVisibility();
-    const completed = completeLevel();
-
-    if (newlyVisible.length > 0) {
-      scrollToBlock(newlyVisible[0]);
-    }
-
-    return completed;
+  records[activeLevel.id] = {
+    attempts: (current.attempts || 0) + 1,
+    bestMs: current.bestMs == null ? elapsedMs : Math.min(current.bestMs, elapsedMs),
+    lastMs: elapsedMs,
+    completedAt: new Date().toISOString(),
   };
 
-  function showLoadError(level, error) {
-    activeCanvasControllers.forEach((controller) => controller.destroy());
-    activeCanvasControllers = [];
-    renderedBlocks = [];
-    canvasBadges = new Map();
-    activeLevel = null;
+  writeRecords(records);
+  return true;
+}
 
-    const panel = document.createElement("article");
-    panel.className = "story-panel";
-    const title = document.createElement("h1");
-    title.textContent = level.id;
-    const content = document.createElement("div");
-    content.className = "rich-text";
-    const message = document.createElement("p");
-    message.textContent = "关卡内容加载失败。";
-    content.append(message);
-    panel.append(title, content);
-    levelContent.replaceChildren(panel);
-    console.error(error);
+function markCanvasSolved(canvasIndex, badge) {
+  if (
+    !Number.isInteger(canvasIndex) ||
+    canvasIndex < 0 ||
+    canvasIndex >= canvasState.length
+  ) {
+    return;
   }
 
-  async function renderLevel(level) {
-    const requestId = ++renderRequestId;
-    let blocks;
+  canvasState[canvasIndex] = true;
+  if (badge) {
+    badge.classList.add("is-solved");
+    badge.setAttribute("aria-label", "已完成");
+  }
+  const newlyVisible = updateBlockVisibility();
 
-    try {
-      blocks = await loadLevelBlocks(level);
-    } catch (error) {
-      if (requestId === renderRequestId) {
-        showLoadError(level, error);
-      }
-      return;
-    }
-
-    if (requestId !== renderRequestId) {
-      return;
-    }
-
-    activeCanvasControllers.forEach((controller) => controller.destroy());
-    activeCanvasControllers = [];
-    renderedBlocks = [];
-    canvasBadges = new Map();
-    activeLevel = { ...level, blocks };
-    startedAt = performance.now();
-    isComplete = false;
-    canvasState = new Map(getCanvasBlocks(activeLevel).map((canvas) => [canvas, false]));
-
-    renderedBlocks = activeLevel.blocks.map(renderBlock);
-    levelContent.replaceChildren(...renderedBlocks.map(({ element }) => element));
-    updateBlockVisibility();
+  if (canvasState.every(Boolean)) {
+    completeLevel();
   }
 
-  function handleRouteChange() {
-    const requestedId = decodeURIComponent(location.hash.replace(/^#/, ""));
-    const level = getLevelFromHash();
+  if (newlyVisible.length > 0) {
+    scrollToBlock(newlyVisible[0]);
+  }
+}
 
-    if (!level) {
-      return;
-    }
-
-    if (requestedId !== level.id) {
-      history.replaceState(null, "", `#${encodeURIComponent(level.id)}`);
-    }
-
-    void renderLevel(level);
+window.completeCurrentLevel = () => {
+  if (!activeLevel || isComplete) {
+    return false;
   }
 
-  window.addEventListener("hashchange", handleRouteChange);
-  handleRouteChange();
+  canvasState.fill(true);
+  canvasBadges.forEach((badge) => {
+    badge.classList.add("is-solved");
+    badge.setAttribute("aria-label", "已完成");
+  });
+  const newlyVisible = updateBlockVisibility();
+  const completed = completeLevel();
+
+  if (newlyVisible.length > 0) {
+    scrollToBlock(newlyVisible[0]);
+  }
+
+  return completed;
+};
+
+function showLoadError(level, error) {
+  activeCanvasControllers.forEach((controller) => controller.destroy());
+  activeCanvasControllers = [];
+  renderedBlocks = [];
+  canvasBadges = [];
+  activeLevel = null;
+
+  const panel = document.createElement("article");
+  panel.className = "story-panel";
+  const title = document.createElement("h1");
+  title.textContent = level.id;
+  const content = document.createElement("div");
+  content.className = "rich-text";
+  const message = document.createElement("p");
+  message.textContent = "关卡内容加载失败。";
+  content.append(message);
+  panel.append(title, content);
+  levelContent.replaceChildren(panel);
+  console.error(error);
+}
+
+async function renderLevel(level) {
+  const requestId = ++renderRequestId;
+  let blocks;
+
+  try {
+    blocks = await loadLevelBlocks(level);
+  } catch (error) {
+    if (requestId === renderRequestId) {
+      showLoadError(level, error);
+    }
+    return;
+  }
+
+  if (requestId !== renderRequestId) {
+    return;
+  }
+
+  activeCanvasControllers.forEach((controller) => controller.destroy());
+  activeCanvasControllers = [];
+  renderedBlocks = [];
+  canvasBadges = [];
+  activeLevel = { ...level, blocks };
+  startedAt = performance.now();
+  isComplete = false;
+  canvasState = Array(getCanvasBlocks(activeLevel).length).fill(false);
+
+  renderedBlocks = activeLevel.blocks.map(renderBlock);
+  levelContent.replaceChildren(...renderedBlocks.map(({ element }) => element));
+  updateBlockVisibility();
+}
+
+function handleRouteChange() {
+  const requestedId = decodeURIComponent(location.hash.replace(/^#/, ""));
+  const level = getLevelFromHash();
+
+  if (!level) {
+    return;
+  }
+
+  if (requestedId !== level.id) {
+    history.replaceState(null, "", `#${encodeURIComponent(level.id)}`);
+  }
+
+  void renderLevel(level);
+}
+
+window.addEventListener("hashchange", handleRouteChange);
+handleRouteChange();
